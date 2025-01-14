@@ -1,64 +1,86 @@
-'use client'
+'use client';
 
-import { useState, useCallback } from 'react'
-import { useDropzone } from 'react-dropzone'
+import { useState, useCallback } from 'react';
+import { useDropzone } from 'react-dropzone';
 
 export default function UploadForm() {
-  const [file, setFile] = useState<File | null>(null)
-  const [jobDescription, setJobDescription] = useState('')
-  const [result, setResult] = useState<{ similarity_score: number; suggestions: string[] } | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [file, setFile] = useState<File | null>(null);
+  const [jobDescription, setJobDescription] = useState('');
+  const [result, setResult] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    setFile(acceptedFiles[0])
-  }, [])
+    setFile(acceptedFiles[0]);
+  }, []);
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: {
-      'application/pdf': ['.pdf']
-    },
-    maxFiles: 1
-  })
+    accept: { 'application/pdf': ['.pdf'] },
+    maxFiles: 1,
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     if (!file || !jobDescription) {
-      setError('Please provide both a resume and a job description.')
-      return
+      setError('Please provide both a resume and a job description.');
+      return;
     }
 
-    setIsLoading(true)
-    setError(null)
-
-    const formData = new FormData()
-    formData.append('resume', file)
-    formData.append('jobDescription', jobDescription)
+    setIsLoading(true);
+    setError(null);
 
     try {
-      const response = await fetch('/api/match', {
+      // Step 1: Extract text from the uploaded PDF
+      const formData = new FormData();
+      formData.append('resume', file);
+
+      const extractionResponse = await fetch('/api/extract-pdf', {
         method: 'POST',
         body: formData,
-      })
+      });
 
-      if (!response.ok) {
-        throw new Error('Failed to process resume')
+      if (!extractionResponse.ok) {
+        throw new Error('Failed to extract text from PDF');
       }
 
-      const data = await response.json()
-      setResult(data)
+      const { text: resumeText } = await extractionResponse.json();
+
+      // Step 2: Send the extracted text and job description to the matching API
+      const matchingResponse = await fetch('/api/match', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          resumeText,
+          jobDescription,
+        }),
+      });
+
+      if (!matchingResponse.ok) {
+        throw new Error('Failed to process resume');
+      }
+
+      const data = await matchingResponse.json();
+      setResult(data.result);
     } catch (err) {
-      setError('An error occurred while processing your request. Please try again.')
+      setError('An error occurred while processing your request. Please try again.');
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-2xl mx-auto p-4">
+      <h1 className="text-2xl font-bold text-center mb-6">Resume Matcher</h1>
       <form onSubmit={handleSubmit} className="space-y-6">
-        <div {...getRootProps()} className={`p-6 border-2 border-dashed rounded-md text-center cursor-pointer ${isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'}`}>
+        <div
+          {...getRootProps()}
+          className={`p-6 border-2 border-dashed rounded-md text-center cursor-pointer ${
+            isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
+          }`}
+        >
           <input {...getInputProps()} />
           {file ? (
             <p>File selected: {file.name}</p>
@@ -97,16 +119,9 @@ export default function UploadForm() {
       {result && (
         <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative">
           <h2 className="font-bold text-lg mb-2">Results</h2>
-          <p className="mb-2">Similarity Score: {(result.similarity_score * 100).toFixed(2)}%</p>
-          <h3 className="font-bold">Suggestions:</h3>
-          <ul className="list-disc list-inside">
-            {result.suggestions.map((suggestion, index) => (
-              <li key={index}>{suggestion}</li>
-            ))}
-          </ul>
+          <pre className="whitespace-pre-wrap">{result}</pre>
         </div>
       )}
     </div>
-  )
+  );
 }
-

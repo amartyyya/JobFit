@@ -1,48 +1,59 @@
+
+//GEMINI
+
+
 const express = require("express");
 const multer = require("multer");
-const { spawn } = require("child_process");
 const path = require("path");
+const fs = require("fs");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+require("dotenv").config();
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
+const PORT = process.env.PORT || 3001;
 
-app.use(express.json());
+// Initialize Google Generative AI client
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-app.post("/api/match", upload.single("resume"), (req, res) => {
-  if (!req.file || !req.body.jobDescription) {
-    return res.status(400).json({ error: "Missing resume or job description" });
-  }
+// Endpoint to handle resume and job description processing
+app.post("/api/match", upload.single("resume"), async (req, res) => {
+  try {
+    console.log("Received request:", req.file, req.body.jobDescription);
 
-  const resumePath = req.file.path;
-  const jobDescription = req.body.jobDescription;
-
-  const pythonCommand = process.platform === "win32" ? "python" : "python3";
-
-  const pythonProcess = spawn(pythonCommand, [
-    path.join(__dirname, "process_resume.py"),
-    resumePath,
-    jobDescription,
-  ]);
-
-  let result = "";
-
-  pythonProcess.stdout.on("data", (data) => {
-    result += data.toString();
-  });
-
-  pythonProcess.stderr.on("data", (data) => {
-    console.error(`Python script error: ${data}`);
-  });
-
-  pythonProcess.on("close", (code) => {
-    if (code !== 0) {
-      return res.status(500).json({ error: "Error processing resume" });
+    if (!req.file || !req.body.jobDescription) {
+      return res.status(400).json({ error: "Missing resume or job description" });
     }
-    res.json(JSON.parse(result));
-  });
+
+    const resumePath = path.resolve(__dirname, req.file.path);
+    const resumeText = fs.readFileSync(resumePath, "utf8");
+    const jobDescription = req.body.jobDescription;
+
+    console.log("Extracted Resume Text:", resumeText);
+
+    // Prompt to send to Google Generative AI
+    const prompt = `Match the following resume with this job description and provide suggestions:
+    
+    Resume: ${resumeText}
+    
+    Job Description: ${jobDescription}`;
+
+    // Generate content using Google Generative AI
+    const result = await model.generateContent([prompt]);
+
+    console.log("Generated Result:", result.response.text());
+
+    res.json({
+      result: result.response.text(),
+    });
+  } catch (err) {
+    console.error("Error occurred:", err.message);
+    res.status(500).json({ error: "An error occurred while processing your request.", details: err.message });
+  }
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
 });
