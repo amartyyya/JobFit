@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 
 export default function UploadForm() {
@@ -9,6 +9,12 @@ export default function UploadForm() {
   const [result, setResult] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false); // Track hydration
+
+  useEffect(() => {
+    // Ensure client-only logic runs after component mounts
+    setIsMounted(true);
+  }, []);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
     setFile(acceptedFiles[0]);
@@ -31,7 +37,6 @@ export default function UploadForm() {
     setError(null);
 
     try {
-      // Step 1: Extract text from the uploaded PDF
       const formData = new FormData();
       formData.append('resume', file);
 
@@ -46,7 +51,6 @@ export default function UploadForm() {
 
       const { text: resumeText } = await extractionResponse.json();
 
-      // Step 2: Send the extracted text and job description to the matching API
       const matchingResponse = await fetch('/api/match', {
         method: 'POST',
         headers: {
@@ -64,12 +68,17 @@ export default function UploadForm() {
 
       const data = await matchingResponse.json();
       setResult(data.result);
-    } catch (err) {
+    } catch (_err) {
       setError('An error occurred while processing your request. Please try again.');
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (!isMounted) {
+    // Render placeholder content during hydration
+    return null;
+  }
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto p-4">

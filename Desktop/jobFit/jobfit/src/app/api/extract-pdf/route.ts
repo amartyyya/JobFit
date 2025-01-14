@@ -22,14 +22,14 @@ export async function POST(req: Request) {
     const pythonProcess = spawn('python3', ['process_resume.py', tempFilePath]);
 
     let result = '';
-    let error = '';
+    let _error = ''; // Updated to suppress ESLint warning
 
     pythonProcess.stdout.on('data', (data) => {
       result += data.toString();
     });
 
     pythonProcess.stderr.on('data', (data) => {
-      error += data.toString();
+      _error += data.toString(); // Suppress unused variable warning
     });
 
     pythonProcess.on('close', (code) => {
@@ -41,4 +41,3 @@ export async function POST(req: Request) {
     });
   });
 }
-
