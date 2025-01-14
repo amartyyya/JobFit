@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { spawn } from 'child_process';
-import { writeFile } from 'fs/promises';
+import { writeFile, unlink } from 'fs/promises';
 import path from 'path';
 
 export async function POST(req: Request) {
@@ -16,28 +16,36 @@ export async function POST(req: Request) {
 
   // Save the file temporarily
   const tempFilePath = path.join('/tmp', `${Date.now()}_${file.name}`);
-  await writeFile(tempFilePath, buffer);
+  try {
+    await writeFile(tempFilePath, buffer);
 
-  return new Promise((resolve) => {
-    const pythonProcess = spawn('python3', ['process_resume.py', tempFilePath]);
+    return new Promise((resolve) => {
+      const pythonProcess = spawn('python3', ['process_resume.py', tempFilePath]);
 
-    let result = '';
-    let _error = ''; // Updated to suppress ESLint warning
+      let result = '';
 
-    pythonProcess.stdout.on('data', (data) => {
-      result += data.toString();
+      pythonProcess.stdout.on('data', (data) => {
+        result += data.toString();
+      });
+
+      pythonProcess.stderr.on('data', (data) => {
+        // You can handle error logging or message here
+        console.error(data.toString());
+      });
+
+      pythonProcess.on('close', async (code) => {
+        // Clean up the temporary file
+        await unlink(tempFilePath).catch(() => null);
+
+        if (code !== 0) {
+          resolve(NextResponse.json({ error: 'Failed to extract text from PDF' }, { status: 500 }));
+        } else {
+          resolve(NextResponse.json({ text: result }));
+        }
+      });
     });
-
-    pythonProcess.stderr.on('data', (data) => {
-      _error += data.toString(); // Suppress unused variable warning
-    });
-
-    pythonProcess.on('close', (code) => {
-      if (code !== 0) {
-        resolve(NextResponse.json({ error: 'Failed to extract text from PDF' }, { status: 500 }));
-      } else {
-        resolve(NextResponse.json({ text: result }));
-      }
-    });
-  });
+  } catch (err) {
+    await unlink(tempFilePath).catch(() => null); // Clean up in case of errors
+    return NextResponse.json({ error: 'An unexpected error occurred' }, { status: 500 });
+  }
 }
