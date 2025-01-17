@@ -72,15 +72,17 @@ export async function POST(req: Request) {
   try {
     await writeFile(tempFilePath, buffer);
 
-    return new Promise((resolve) => {
-      const pythonProcess = spawn('python3', ['process_resume.py', tempFilePath]);
+    const pythonProcess = spawn('python3', ['process_resume.py', tempFilePath]);
 
-      let result = '';
+    let result = '';
 
-      pythonProcess.stdout.on('data', (chunk) => {
-        result += chunk.toString();
-      });
+    // Capture the output from the Python process
+    pythonProcess.stdout.on('data', (chunk) => {
+      result += chunk.toString();
+    });
 
+    // Return the result once the process is done
+    const response = await new Promise<NextResponse>((resolve) => {
       pythonProcess.on('close', async (code) => {
         await unlink(tempFilePath).catch(() => null); // Clean up temporary file
 
@@ -91,9 +93,10 @@ export async function POST(req: Request) {
         }
       });
     });
+
+    return response;
   } catch {
     await unlink(tempFilePath).catch(() => null); // Clean up on error
     return NextResponse.json({ error: 'An unexpected error occurred' }, { status: 500 });
   }
 }
-//hello
